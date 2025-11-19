@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+build/
+
+# Data exports
+az_model/data/
+az_model/worldbank_excels/
+az_model/commodities_all/*.csv
+az_model/commodities_all/*.txt
+az_model/fx/*.csv
+az_model/fx/*.txt
+az_model/*.csv
+az_model/*.txt
+
+# Logs
+*.log
+
