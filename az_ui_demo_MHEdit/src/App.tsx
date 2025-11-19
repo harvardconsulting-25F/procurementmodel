@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import CostInputs from './components/CostInputs';
 import CoefficientEditor from './components/CoefficientEditor';
 import NormalDistributionChart from './components/NormalDistributionChart';
@@ -42,8 +42,23 @@ const DEFAULT_COEFFICIENTS: ModelCoefficients = {
   other_t3: -0.02,
 };
 
-// API base URL - adjust if your Flask server runs on a different port/host
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const DEFAULT_LOCAL_API = 'http://localhost:5001';
+
+const sanitizeUrl = (value: string): string => value.replace(/\/+$/, '');
+
+const getInitialApiBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (envUrl) {
+    return sanitizeUrl(envUrl);
+  }
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem('apiBaseUrl');
+    if (stored) {
+      return stored;
+    }
+  }
+  return DEFAULT_LOCAL_API;
+};
 
 const INITIAL_WEIGHTS: CostInputsType = {
   labor: 20,
@@ -151,10 +166,15 @@ const describeTrend = (delta: number | null, mean: number) => {
 
 // Calculate prediction using the API
 const calculatePrediction = async (
+  apiBaseUrl: string,
   inputs: CostInputsType,
   coefficients: ModelCoefficients
 ): Promise<PredictionResult | null> => {
   try {
+    if (!apiBaseUrl) {
+      throw new Error('API base URL is not configured');
+    }
+
     // Send coefficients as-is (UI stores them with correct signs)
     const apiCoefficients = {
       labor_t: coefficients.labor_t,
@@ -179,7 +199,7 @@ const calculatePrediction = async (
       other_t3: coefficients.other_t3,
     };
 
-    const response = await fetch(`${API_BASE_URL}/api/predict`, {
+    const response = await fetch(`${apiBaseUrl}/api/predict`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -214,9 +234,13 @@ const calculatePrediction = async (
 };
 
 // Load external data from the API
-const loadExternalData = async (): Promise<LatestDataResponse> => {
+const loadExternalData = async (apiBaseUrl: string): Promise<LatestDataResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/data/latest`);
+    if (!apiBaseUrl) {
+      throw new Error('API base URL is not configured');
+    }
+
+    const response = await fetch(`${apiBaseUrl}/api/data/latest`);
     
     if (!response.ok) {
       const error = await response.json();
@@ -247,7 +271,53 @@ function App() {
   const [isCalculating, setIsCalculating] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [trendDelta, setTrendDelta] = useState<number | null>(null);
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>(() => getInitialApiBaseUrl());
+  const [apiInputValue, setApiInputValue] = useState<string>(() => getInitialApiBaseUrl());
+  const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
+  const [apiStatusMessage, setApiStatusMessage] = useState<string>('Checking connection...');
   const previousMeanRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      window.localStorage.removeItem('apiBaseUrl');
+      setApiStatus('error');
+      setApiStatusMessage('API URL not configured.');
+      return;
+    }
+
+    window.localStorage.setItem('apiBaseUrl', apiBaseUrl);
+    setApiStatus('checking');
+    setApiStatusMessage('Checking connection...');
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    fetch(`${apiBaseUrl}/api/health`, { signal: controller.signal })
+      .then((response) => {
+        if (cancelled) return;
+        if (response.ok) {
+          setApiStatus('ok');
+          setApiStatusMessage('Connected to API');
+        } else {
+          setApiStatus('error');
+          setApiStatusMessage(`API health check failed (${response.status})`);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setApiStatus('error');
+        setApiStatusMessage(error.message || 'Unable to reach API');
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [apiBaseUrl]);
 
   const totalWeight = useMemo(() => getTotalWeight(costInputs), [costInputs]);
   const weightsValid = useMemo(() => weightsAreValid(costInputs), [costInputs]);
@@ -258,16 +328,33 @@ function App() {
     previousMeanRef.current = null;
   }, []);
 
+  const handleApplyApiBaseUrl = useCallback(() => {
+    const sanitizedValue = apiInputValue.trim();
+    const normalized = sanitizedValue ? sanitizeUrl(sanitizedValue) : '';
+    setApiBaseUrl(normalized);
+    setApiInputValue(normalized);
+    resetPredictionState();
+  }, [apiInputValue, resetPredictionState]);
+
+  const handleUseLocalApi = useCallback(() => {
+    setApiInputValue(DEFAULT_LOCAL_API);
+    setApiBaseUrl(DEFAULT_LOCAL_API);
+    resetPredictionState();
+  }, [resetPredictionState]);
+
   const runPrediction = useCallback(
     async (inputsSnapshot: CostInputsType, coefficientSnapshot: ModelCoefficients) => {
-      if (!weightsAreValid(inputsSnapshot)) {
+      if (!weightsAreValid(inputsSnapshot) || !apiBaseUrl) {
         resetPredictionState();
+        if (!apiBaseUrl) {
+          console.warn('API base URL is not configured. Prediction skipped.');
+        }
         return;
       }
 
       setIsCalculating(true);
       try {
-        const newPrediction = await calculatePrediction(inputsSnapshot, coefficientSnapshot);
+        const newPrediction = await calculatePrediction(apiBaseUrl, inputsSnapshot, coefficientSnapshot);
         setPrediction(newPrediction);
         if (newPrediction) {
           const previousMean = previousMeanRef.current;
@@ -283,7 +370,7 @@ function App() {
         setIsCalculating(false);
       }
     },
-    [resetPredictionState]
+    [apiBaseUrl, resetPredictionState]
   );
 
   const handleInputChange = useCallback(
@@ -321,9 +408,14 @@ function App() {
   }, [costInputs, weightsValid, runPrediction]);
 
   const handleLoadExternalData = useCallback(async () => {
+    if (!apiBaseUrl) {
+      alert('Enter the API base URL to load external data.');
+      return;
+    }
+
     setIsLoadingExternal(true);
     try {
-      const externalPayload = await loadExternalData();
+      const externalPayload = await loadExternalData(apiBaseUrl);
       const normalizedWeights = normalizeWeightsFromFullData(externalPayload);
       setCostInputs(normalizedWeights);
       if (weightsAreValid(normalizedWeights)) {
@@ -333,11 +425,11 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading external data:', error);
-      alert('Failed to load external data. Please make sure the API server is running at http://localhost:5001');
+      alert(`Failed to load external data. Please make sure the API server is reachable at ${apiBaseUrl}.`);
     } finally {
       setIsLoadingExternal(false);
     }
-  }, [coefficients, runPrediction, resetPredictionState]);
+  }, [apiBaseUrl, coefficients, runPrediction, resetPredictionState]);
 
   // Generate explanatory text for price prediction
   const explanationText = useMemo(() => {
@@ -454,6 +546,17 @@ function App() {
     };
   }, [prediction, trendDelta]);
 
+  const apiStatusColor =
+    apiStatus === 'ok' ? 'text-green-600' : apiStatus === 'checking' ? 'text-amber-600' : 'text-red-600';
+  const externalLoadEnabled = Boolean(apiBaseUrl) && apiStatus === 'ok';
+  const externalLoadHint = !apiBaseUrl
+    ? 'Set the API URL above to enable external data.'
+    : apiStatus === 'checking'
+      ? 'Validating API connection...'
+      : apiStatus === 'error'
+        ? 'API unreachable. Update the URL or check your deployment.'
+        : undefined;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -505,12 +608,52 @@ function App() {
       <main className="container mx-auto px-6 py-8">
         {activeTab === 'dashboard' ? (
           <div className="space-y-8">
+            <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-primary">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <div className="flex-1">
+                  <h2 className="text-xl font-semibold text-primary">API Connection</h2>
+                  <p className={`text-sm font-semibold mt-1 ${apiStatusColor}`}>
+                    {apiStatusMessage}
+                    {apiBaseUrl ? ` · ${apiBaseUrl}` : ''}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Paste your deployed Flask API URL (Render/Heroku/etc.) so the dashboard can fetch live data.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                  <input
+                    type="text"
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="https://your-api.onrender.com"
+                    value={apiInputValue}
+                    onChange={(event) => setApiInputValue(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyApiBaseUrl}
+                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                  >
+                    Save URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUseLocalApi}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                  >
+                    Use Localhost
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Cost Inputs Section */}
             <CostInputs
               inputs={costInputs}
               onInputChange={handleInputChange}
               onLoadExternalData={handleLoadExternalData}
               isLoadingExternal={isLoadingExternal}
+              externalLoadEnabled={externalLoadEnabled}
+              externalLoadHint={externalLoadHint}
             />
 
             {/* Coefficient Editor Section */}
@@ -552,4 +695,3 @@ function App() {
 }
 
 export default App;
-

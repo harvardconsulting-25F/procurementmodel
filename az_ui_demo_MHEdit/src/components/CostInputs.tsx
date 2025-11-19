@@ -6,9 +6,18 @@ interface CostInputsProps {
   onInputChange: (field: keyof CostInputsType, value: number) => void;
   onLoadExternalData: () => void;
   isLoadingExternal?: boolean;
+  externalLoadEnabled?: boolean;
+  externalLoadHint?: string;
 }
 
-const CostInputs: React.FC<CostInputsProps> = ({ inputs, onInputChange, onLoadExternalData, isLoadingExternal = false }) => {
+const CostInputs: React.FC<CostInputsProps> = ({
+  inputs,
+  onInputChange,
+  onLoadExternalData,
+  isLoadingExternal = false,
+  externalLoadEnabled = true,
+  externalLoadHint,
+}) => {
   const inputFields: Array<{ key: keyof CostInputsType; label: string; icon: string }> = [
     { key: 'labor', label: 'Labor', icon: '👥' },
     { key: 'capital', label: 'Capital', icon: '🏭' },
@@ -36,14 +45,19 @@ const CostInputs: React.FC<CostInputsProps> = ({ inputs, onInputChange, onLoadEx
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-semibold text-primary">Cost Inputs</h2>
         <div className="flex gap-3">
-          <button
-            onClick={onLoadExternalData}
-            disabled={isLoadingExternal}
-            className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span>📊</span>
-            <span>{isLoadingExternal ? 'Loading...' : 'Load from External Data'}</span>
-          </button>
+          <div className="flex flex-col items-end">
+            <button
+              onClick={onLoadExternalData}
+              disabled={isLoadingExternal || !externalLoadEnabled}
+              className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>📊</span>
+              <span>{isLoadingExternal ? 'Loading...' : 'Load from External Data'}</span>
+            </button>
+            {!externalLoadEnabled && externalLoadHint && (
+              <p className="text-xs text-red-600 mt-1 text-right">{externalLoadHint}</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -87,4 +101,3 @@ const CostInputs: React.FC<CostInputsProps> = ({ inputs, onInputChange, onLoadEx
 };
 
 export default CostInputs;
-
