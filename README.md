@@ -46,6 +46,68 @@ Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`
 
 ---
 
+## GitHub Pages Deployment
+
+The React UI is configured to deploy automatically to GitHub Pages via GitHub Actions.
+
+### Automatic Deployment (Recommended)
+
+1. **Enable GitHub Pages in your repository:**
+   - Go to your repo on GitHub → **Settings** → **Pages**
+   - Under **Source**, select **GitHub Actions** (not "Deploy from a branch")
+   - Save the settings
+
+2. **Push your code:**
+   ```bash
+   git add .
+   git commit -m "Configure GitHub Pages deployment"
+   git push origin main
+   ```
+
+3. **Wait for the workflow to complete:**
+   - Go to **Actions** tab in your repo
+   - The "Deploy to GitHub Pages" workflow will run automatically
+   - Once complete, your site will be live at:
+     `https://harvardconsulting-25F.github.io/procurementmodel/`
+
+The workflow (`.github/workflows/deploy.yml`) automatically:
+- Builds the React app with the correct base path (`/procurementmodel/`)
+- Deploys the `dist/` folder to GitHub Pages
+- Runs on every push to `main` branch
+
+### Manual Deployment (Alternative)
+
+If you prefer to deploy manually:
+
+```bash
+cd az_ui_demo_MHEdit
+npm install
+npm run build
+
+# Copy dist/ contents to a docs/ folder in root
+cd ..
+mkdir -p docs
+cp -r az_ui_demo_MHEdit/dist/* docs/
+
+# Commit and push
+git add docs/
+git commit -m "Deploy UI to GitHub Pages"
+git push origin main
+```
+
+Then in GitHub Settings → Pages, set **Source** to `/docs` folder.
+
+### Important Notes
+
+- **API URL**: The deployed UI will try to connect to `http://localhost:5001` by default. For production, you'll need to:
+  - Deploy the Flask API separately (e.g., Heroku, Railway, Render)
+  - Update `VITE_API_URL` environment variable or modify `src/App.tsx` to point to your production API URL
+  - Rebuild and redeploy the UI
+
+- **Base Path**: The Vite config is set to `/procurementmodel/` to match the repo name. If your repo name changes, update `az_ui_demo_MHEdit/vite.config.ts`.
+
+---
+
 ## az_model (Python) Overview
 
 ### Key Files
@@ -184,6 +246,7 @@ Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`
 * Introduce authentication to the API (e.g., simple API key check) for production usage.
 * Hook up automated tests (PyTest for backend, Vitest/RTL for frontend) to catch regressions when coefficients or weight logic changes.
 
+---
 
 Feel free to adapt the tooling for other commodities or procurement categories—the architecture keeps data ingestion, modeling, and presentation layers modular on purpose. If you have any questions, please contact us at info@harvardundergradconsulting.org
 
