@@ -35,6 +35,8 @@ jobs:
 
       - name: Build
         working-directory: az_ui_demo_MHEdit
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || secrets.VITE_API_URL || 'http://localhost:5001' }}
         run: npm run build
 
       - name: Setup Pages
@@ -55,4 +57,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-

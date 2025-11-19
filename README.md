@@ -57,7 +57,10 @@ The React UI is configured to deploy automatically to GitHub Pages via GitHub Ac
    - Under **Source**, select **GitHub Actions** (not "Deploy from a branch")
    - Save the settings
 
-2. **Push your code:**
+2. **(Optional) Set the production API URL**  
+   In your GitHub repo go to **Settings → Variables → Actions** (or **Secrets**), add `VITE_API_URL` pointing to your hosted Flask API. The workflow now injects this value during `npm run build` so the static UI calls the correct backend.
+
+3. **Push your code:**
    ```bash
    git add .
    git commit -m "Configure GitHub Pages deployment"
@@ -71,7 +74,7 @@ The React UI is configured to deploy automatically to GitHub Pages via GitHub Ac
      `https://harvardconsulting-25F.github.io/procurementmodel/`
 
 The workflow (`.github/workflows/deploy.yml`) automatically:
-- Builds the React app with the correct base path (`/procurementmodel/`)
+- Builds the React app with the correct base path (auto-detected from the repo name so GitHub Pages serves `/your-repo/` assets properly)
 - Deploys the `dist/` folder to GitHub Pages
 - Runs on every push to `main` branch
 
@@ -104,7 +107,7 @@ Then in GitHub Settings → Pages, set **Source** to `/docs` folder.
   - Update `VITE_API_URL` environment variable or modify `src/App.tsx` to point to your production API URL
   - Rebuild and redeploy the UI
 
-- **Base Path**: The Vite config is set to `/procurementmodel/` to match the repo name. If your repo name changes, update `az_ui_demo_MHEdit/vite.config.ts`.
+- **Base Path**: Vite now auto-detects the repo name during CI so assets are served from `/your-repo/`. Override `base` in `az_ui_demo_MHEdit/vite.config.ts` only if you host under a custom path.
 
 ---
 
@@ -249,4 +252,3 @@ Then in GitHub Settings → Pages, set **Source** to `/docs` folder.
 ---
 
 Feel free to adapt the tooling for other commodities or procurement categories—the architecture keeps data ingestion, modeling, and presentation layers modular on purpose. If you have any questions, please contact us at info@harvardundergradconsulting.org
-
