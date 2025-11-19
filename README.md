@@ -184,5 +184,6 @@ Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`
 * Introduce authentication to the API (e.g., simple API key check) for production usage.
 * Hook up automated tests (PyTest for backend, Vitest/RTL for frontend) to catch regressions when coefficients or weight logic changes.
 
-Feel free to adapt the tooling for other commodities or procurement categories—the architecture keeps data ingestion, modeling, and presentation layers modular on purpose.
+
+Feel free to adapt the tooling for other commodities or procurement categories—the architecture keeps data ingestion, modeling, and presentation layers modular on purpose. If you have any questions, please contact us at info@harvardundergradconsulting.org
 
