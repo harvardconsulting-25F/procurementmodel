@@ -5,14 +5,25 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import pandas as pd
 import os
+import subprocess
+import sys
 from typing import Dict, List, Optional
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # === CONFIGURATION ===
-data_dir = "data"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+data_dir = os.path.join(BASE_DIR, "data")
 compiled_file = os.path.join(data_dir, "compiled_percentage_changes.csv")
+data_pipeline_scripts = [
+    "download_labor.py",
+    "download_capital.py",
+    "download_materials.py",
+    "download_energy.py",
+    "compute_percentages.py",
+]
+_data_initialized = False
 
 # Default coefficients (matching the model.py formula exactly)
 # These are the raw coefficients used in model.py before the subtraction
@@ -40,12 +51,48 @@ DEFAULT_COEFFICIENTS = {
 }
 
 
+def run_data_pipeline():
+    """
+    Rebuild the compiled percentage change data by running the downloader
+    scripts followed by compute_percentages.py. This is useful for hosted
+    environments (e.g., Render) where the data directory starts empty.
+    """
+    for script_name in data_pipeline_scripts:
+        script_path = os.path.join(BASE_DIR, script_name)
+        if not os.path.exists(script_path):
+            raise FileNotFoundError(f"Data pipeline script missing: {script_name}")
+        print(f"🔄 Running data prep script: {script_name}")
+        subprocess.run([sys.executable, script_path], cwd=BASE_DIR, check=True)
+
+    if not os.path.exists(compiled_file):
+        raise FileNotFoundError(
+            f"Data pipeline completed but {compiled_file} was not generated."
+        )
+    print("✅ Data pipeline completed successfully.")
+
+
+def ensure_compiled_data():
+    """
+    Ensure compiled_percentage_changes.csv exists before serving API requests.
+    """
+    global _data_initialized
+    if _data_initialized and os.path.exists(compiled_file):
+        return
+
+    if not os.path.exists(compiled_file):
+        os.makedirs(data_dir, exist_ok=True)
+        run_data_pipeline()
+
+    _data_initialized = True
+
+
 def load_latest_data() -> Dict[str, List[float]]:
     """
     Load the latest 4 percentage changes for each category from CSV.
     Returns data in format: {category: [t-3, t-2, t-1, t]}
     """
     try:
+        ensure_compiled_data()
         if not os.path.exists(compiled_file):
             raise FileNotFoundError(f"Data file not found: {compiled_file}")
         
@@ -345,4 +392,3 @@ if __name__ == '__main__':
     print("  POST /api/predict - Calculate prediction")
     print("  GET  /api/coefficients/default - Get default coefficients")
     app.run(debug=True, port=5001, host='127.0.0.1')
-

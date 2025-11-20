@@ -682,14 +682,6 @@ function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-gray-200 border-t-4 border-primary mt-12 py-6">
-        <div className="container mx-auto px-6 text-center">
-          <p className="text-sm text-gray-500">
-            Procurement Model UI - Algorithm integration points marked with TODO comments
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
