@@ -16,6 +16,7 @@ CORS(app)  # Enable CORS for all routes
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(BASE_DIR, "data")
 compiled_file = os.path.join(data_dir, "compiled_percentage_changes.csv")
+AUTO_BUILD_DATA = os.environ.get("AUTO_BUILD_DATA", "1") not in {"0", "false", "False"}
 data_pipeline_scripts = [
     "download_labor.py",
     "download_capital.py",
@@ -84,6 +85,14 @@ def ensure_compiled_data():
         run_data_pipeline()
 
     _data_initialized = True
+
+
+if AUTO_BUILD_DATA:
+    try:
+        ensure_compiled_data()
+    except Exception as exc:
+        # Log but keep app running; first request will retry if needed.
+        print(f"⚠️ Auto data build failed during startup: {exc}")
 
 
 def load_latest_data() -> Dict[str, List[float]]:
