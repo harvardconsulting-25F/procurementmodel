@@ -51,12 +51,6 @@ const getInitialApiBaseUrl = (): string => {
   if (envUrl) {
     return sanitizeUrl(envUrl);
   }
-  if (typeof window !== 'undefined') {
-    const stored = window.localStorage.getItem('apiBaseUrl');
-    if (stored) {
-      return stored;
-    }
-  }
   return DEFAULT_LOCAL_API;
 };
 
@@ -271,25 +265,18 @@ function App() {
   const [isCalculating, setIsCalculating] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [trendDelta, setTrendDelta] = useState<number | null>(null);
-  const [apiBaseUrl, setApiBaseUrl] = useState<string>(() => getInitialApiBaseUrl());
-  const [apiInputValue, setApiInputValue] = useState<string>(() => getInitialApiBaseUrl());
+  const [apiBaseUrl] = useState<string>(() => getInitialApiBaseUrl());
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const [apiStatusMessage, setApiStatusMessage] = useState<string>('Checking connection...');
   const previousMeanRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
     if (!apiBaseUrl) {
-      window.localStorage.removeItem('apiBaseUrl');
       setApiStatus('error');
       setApiStatusMessage('API URL not configured.');
       return;
     }
 
-    window.localStorage.setItem('apiBaseUrl', apiBaseUrl);
     setApiStatus('checking');
     setApiStatusMessage('Checking connection...');
 
@@ -328,19 +315,6 @@ function App() {
     previousMeanRef.current = null;
   }, []);
 
-  const handleApplyApiBaseUrl = useCallback(() => {
-    const sanitizedValue = apiInputValue.trim();
-    const normalized = sanitizedValue ? sanitizeUrl(sanitizedValue) : '';
-    setApiBaseUrl(normalized);
-    setApiInputValue(normalized);
-    resetPredictionState();
-  }, [apiInputValue, resetPredictionState]);
-
-  const handleUseLocalApi = useCallback(() => {
-    setApiInputValue(DEFAULT_LOCAL_API);
-    setApiBaseUrl(DEFAULT_LOCAL_API);
-    resetPredictionState();
-  }, [resetPredictionState]);
 
   const runPrediction = useCallback(
     async (inputsSnapshot: CostInputsType, coefficientSnapshot: ModelCoefficients) => {
@@ -425,7 +399,8 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading external data:', error);
-      alert(`Failed to load external data. Please make sure the API server is reachable at ${apiBaseUrl}.`);
+      const extraMessage = error instanceof Error ? ` Details: ${error.message}` : '';
+      alert(`Failed to load external data. Please make sure the API server is reachable at ${apiBaseUrl}.${extraMessage}`);
     } finally {
       setIsLoadingExternal(false);
     }
@@ -549,12 +524,11 @@ function App() {
   const apiStatusColor =
     apiStatus === 'ok' ? 'text-green-600' : apiStatus === 'checking' ? 'text-amber-600' : 'text-red-600';
   const externalLoadEnabled = Boolean(apiBaseUrl) && apiStatus === 'ok';
-  const externalLoadHint = !apiBaseUrl
-    ? 'Set the API URL above to enable external data.'
-    : apiStatus === 'checking'
+  const externalLoadHint =
+    apiStatus === 'checking'
       ? 'Validating API connection...'
       : apiStatus === 'error'
-        ? 'API unreachable. Update the URL or check your deployment.'
+        ? 'API unreachable. Double-check your deployment.'
         : undefined;
 
   return (
@@ -609,40 +583,15 @@ function App() {
         {activeTab === 'dashboard' ? (
           <div className="space-y-8">
             <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-primary">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-                <div className="flex-1">
-                  <h2 className="text-xl font-semibold text-primary">API Connection</h2>
-                  <p className={`text-sm font-semibold mt-1 ${apiStatusColor}`}>
-                    {apiStatusMessage}
-                    {apiBaseUrl ? ` · ${apiBaseUrl}` : ''}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Paste your deployed Flask API URL (Render/Heroku/etc.) so the dashboard can fetch live data.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-                  <input
-                    type="text"
-                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent"
-                    placeholder="https://your-api.onrender.com"
-                    value={apiInputValue}
-                    onChange={(event) => setApiInputValue(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleApplyApiBaseUrl}
-                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-                  >
-                    Save URL
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleUseLocalApi}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors"
-                  >
-                    Use Localhost
-                  </button>
-                </div>
+              <div className="flex flex-col gap-2">
+                <h2 className="text-xl font-semibold text-primary">API Connection</h2>
+                <p className={`text-sm font-semibold ${apiStatusColor}`}>
+                  {apiStatusMessage}
+                  {apiBaseUrl ? ` · ${apiBaseUrl}` : ''}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Status automatically reflects the configured backend (set via `VITE_API_URL` during build).
+                </p>
               </div>
             </div>
 
