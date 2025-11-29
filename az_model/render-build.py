@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-AZ_MODEL = ROOT / "az_model"
+AZ_MODEL = ROOT  # scripts already live inside az_model
 
 scripts = [
     "download_labor.py",
