@@ -8,10 +8,8 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
-import { LatestDataResponse } from '../types';
-
 interface HistoricalTrendsProps {
-  data: LatestDataResponse | null;
+  history: Record<string, Array<{ date: string; pct_change: number }>> | null;
   months: number;
   onMonthsChange: (value: number) => void;
 }
@@ -23,11 +21,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   energy: 'Energy',
 };
 
-const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data, months, onMonthsChange }) => {
-  const history = data?.history || {};
+const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ history, months, onMonthsChange }) => {
+  const seriesMap = history || {};
 
   const charts = Object.keys(CATEGORY_LABELS).map((key) => {
-    const entries = history[key] || [];
+    const entries = seriesMap[key] || [];
     const display = entries.slice(-months).map((entry) => ({
       date: entry.date || '',
       value: entry.pct_change ?? 0,

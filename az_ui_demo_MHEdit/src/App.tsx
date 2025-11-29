@@ -5,8 +5,7 @@ import NormalDistributionChart from './components/NormalDistributionChart';
 import Logo from './components/Logo';
 import ModelOverview from './components/ModelOverview';
 import HistoricalTrends from './components/HistoricalTrends';
-import LagAllocationControls from './components/LagAllocationControls';
-type TabKey = 'dashboard' | 'model' | 'lags';
+type TabKey = 'dashboard' | 'model';
 import {
   CostInputs as CostInputsType,
   ModelCoefficients,
@@ -79,9 +78,14 @@ const getTotalWeight = (inputs: CostInputsType): number =>
 const weightsAreValid = (inputs: CostInputsType): boolean =>
   Math.abs(getTotalWeight(inputs) - 100) <= PERCENT_TOLERANCE;
 
-const normalizeWeightsFromFullData = (data: LatestDataResponse): CostInputsType => {
+const normalizeWeightsFromFullData = (data: LatestDataResponse, history?: Record<string, Array<{ pct_change: number }>>): CostInputsType => {
   const allocations: CostInputsType = { labor: 0, capital: 0, materials: 0, energy: 0, other: 0 };
+  const sourceHistory = history || {};
   const seriesValues = CATEGORY_ORDER.map((key) => {
+    const hist = sourceHistory[key];
+    if (hist && hist.length) {
+      return Math.abs(hist[hist.length - 1].pct_change ?? 0);
+    }
     const series = data.full_data?.[key];
     if (Array.isArray(series) && series.length) {
       return Math.abs(series[series.length - 1]);
@@ -103,7 +107,10 @@ const normalizeWeightsFromFullData = (data: LatestDataResponse): CostInputsType 
   return allocations;
 };
 
-const buildSeriesPayload = (data?: LatestDataResponse | null) => {
+const buildSeriesPayload = (
+  data?: LatestDataResponse | null,
+  history?: Record<string, Array<{ pct_change: number }>>
+) => {
   if (!data?.full_data) {
     return undefined;
   }
@@ -113,32 +120,13 @@ const buildSeriesPayload = (data?: LatestDataResponse | null) => {
     const series = data.full_data?.[key];
     if (Array.isArray(series) && series.length) {
       payload[key] = series.slice(-4);
+    } else if (history?.[key]) {
+      payload[key] = history[key].slice(-4).map((entry) => entry.pct_change);
     }
   });
   return payload;
 };
 
-const lagFieldMap: Record<'t' | 't1' | 't2' | 't3', Array<keyof ModelCoefficients>> = {
-  t: ['labor_t', 'capital_t', 'materials_t', 'energy_t', 'other_t'],
-  t1: ['labor_t1', 'capital_t1', 'materials_t1', 'energy_t1', 'other_t1'],
-  t2: ['labor_t2', 'capital_t2', 'materials_t2', 'energy_t2', 'other_t2'],
-  t3: ['labor_t3', 'capital_t3', 'materials_t3', 'energy_t3', 'other_t3'],
-};
-
-const applyLagAllocation = (
-  coefficients: ModelCoefficients,
-  allocation: Record<'t' | 't1' | 't2' | 't3', number>
-): ModelCoefficients => {
-  const adjusted: ModelCoefficients = { ...coefficients };
-  const baseShare = 25; // default distribution
-  (Object.keys(lagFieldMap) as Array<'t' | 't1' | 't2' | 't3'>).forEach((lag) => {
-    const multiplier = allocation[lag] / baseShare;
-    lagFieldMap[lag].forEach((field) => {
-      adjusted[field] = coefficients[field] * multiplier;
-    });
-  });
-  return adjusted;
-};
 
 const classifyPriceChange = (mean: number) => {
   if (mean < 2) {
@@ -357,13 +345,8 @@ function App() {
   const [latestData, setLatestData] = useState<LatestDataResponse | null>(null);
   const [recommendedMix, setRecommendedMix] = useState<CostInputsType | null>(null);
   const [historyMonths, setHistoryMonths] = useState(6);
-  const [lagAllocation, setLagAllocation] = useState<Record<'t' | 't1' | 't2' | 't3', number>>({
-    t: 25,
-    t1: 25,
-    t2: 25,
-    t3: 25,
-  });
   const hasAutoLoaded = useRef(false);
+  const [historyData, setHistoryData] = useState<Record<string, Array<{ date: string; pct_change: number }>> | null>(null);
 
   useEffect(() => {
     if (!apiBaseUrl) {
@@ -455,7 +438,7 @@ function App() {
         setIsCalculating(false);
       }
     },
-    [apiBaseUrl, latestData, resetPredictionState]
+    [apiBaseUrl, latestData, historyData, resetPredictionState]
   );
 
   const handleInputChange = useCallback(
@@ -504,12 +487,10 @@ function App() {
           console.warn('Unable to fetch history data', historyError);
         }
       }
-      const payloadWithHistory: LatestDataResponse = {
-        ...externalPayload,
-        history: historyPayload || {},
-      };
-      setLatestData(payloadWithHistory);
-      const normalizedWeights = normalizeWeightsFromFullData(payloadWithHistory);
+      const historyMap = historyPayload || {};
+      setHistoryData(historyMap);
+      setLatestData(externalPayload);
+      const normalizedWeights = normalizeWeightsFromFullData(externalPayload, historyMap);
       setRecommendedMix(normalizedWeights);
       if (weightsValid) {
         await runPrediction(costInputs, coefficients, externalPayload);

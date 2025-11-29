@@ -75,7 +75,6 @@ export interface LatestDataResponse {
   energy: number;
   other: number;
   full_data?: Record<string, number[]>;
-  history?: Record<string, Array<{ date: string; pct_change: number }>>;
 }
 
 export interface PredictionSummary {
