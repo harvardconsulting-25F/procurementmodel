@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import CostInputs from './components/CostInputs';
-import CoefficientEditor from './components/CoefficientEditor';
 import NormalDistributionChart from './components/NormalDistributionChart';
 import Logo from './components/Logo';
 import ModelOverview from './components/ModelOverview';
@@ -333,6 +332,7 @@ const loadExternalData = async (apiBaseUrl: string): Promise<LatestDataResponse>
       energy: data.energy || 0,
       other: data.other || 0,
       full_data: data.full_data || {},
+      history: data.history || {},
     };
   } catch (error) {
     console.error('Error loading external data:', error);
@@ -470,25 +470,6 @@ function App() {
     },
     [costInputs, coefficients, resetPredictionState, runPrediction]
   );
-
-  const handleCoefficientChange = useCallback(
-    (field: keyof ModelCoefficients, value: number) => {
-      const newCoefficients = { ...coefficients, [field]: value };
-      setCoefficients(newCoefficients);
-
-      if (weightsValid) {
-        runPrediction(costInputs, newCoefficients);
-      }
-    },
-    [coefficients, costInputs, weightsValid, runPrediction]
-  );
-
-  const handleResetCoefficients = useCallback(() => {
-    setCoefficients(DEFAULT_COEFFICIENTS);
-    if (weightsValid) {
-      runPrediction(costInputs, DEFAULT_COEFFICIENTS);
-    }
-  }, [costInputs, weightsValid, runPrediction]);
 
   const handleLoadExternalData = useCallback(async () => {
     if (!apiBaseUrl) {
@@ -737,17 +718,15 @@ function App() {
         )}
 
         {activeTab === 'lags' && (
-          <>
-            <LagAllocationControls allocation={lagAllocation} onUpdate={(field, value) => setLagAllocation((prev) => ({
-              ...prev,
-              [field]: Math.max(0, Math.min(100, value)),
-            }))} />
-            <CoefficientEditor
-              coefficients={coefficients}
-              onCoefficientChange={handleCoefficientChange}
-              onResetToDefaults={handleResetCoefficients}
-            />
-          </>
+          <LagAllocationControls
+            allocation={lagAllocation}
+            onUpdate={(field, value) =>
+              setLagAllocation((prev) => ({
+                ...prev,
+                [field]: Math.max(0, Math.min(100, value)),
+              }))
+            }
+          />
         )}
       </main>
 
