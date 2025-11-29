@@ -56,7 +56,7 @@ This repo ships with a `vercel.json` so one Vercel project can host both the Fla
    - None required for production because the UI now calls `/api` on the same domain.
    - Optional: `AUTO_BUILD_DATA=1` (default) controls whether the API regenerates its data on cold start.
 3. **Deploy**. Vercel will:
-   - Build the Python API from `az_model/api.py` (served under `/api/*`).
+   - Build the Python API via `api/index.py` (which imports `az_model/api.py`) and serve it under `/api/*`.
    - `npm install && npm run build` inside `az_ui_demo_MHEdit/` and serve the static `dist/` output for every non-API route.
 
 If you prefer separate Vercel projects (one for API, one for UI), you can still point each project’s “Root Directory” to `az_model` or `az_ui_demo_MHEdit` respectively and set `VITE_API_URL` to the API project’s URL.
