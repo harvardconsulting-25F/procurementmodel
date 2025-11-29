@@ -401,13 +401,6 @@ function App() {
     };
   }, [apiBaseUrl]);
 
-  useEffect(() => {
-    if (apiStatus === 'ok' && !hasAutoLoaded.current) {
-      hasAutoLoaded.current = true;
-      handleLoadExternalData();
-    }
-  }, [apiStatus, handleLoadExternalData]);
-
   const totalWeight = useMemo(() => getTotalWeight(costInputs), [costInputs]);
   const weightsValid = useMemo(() => weightsAreValid(costInputs), [costInputs]);
   const lagAllocationTotal = lagAllocation.t + lagAllocation.t1 + lagAllocation.t2 + lagAllocation.t3;
@@ -531,6 +524,13 @@ function App() {
       setIsLoadingExternal(false);
     }
   }, [apiBaseUrl, coefficients, costInputs, runPrediction, resetPredictionState, weightsValid]);
+
+  useEffect(() => {
+    if (apiStatus === 'ok' && !hasAutoLoaded.current) {
+      hasAutoLoaded.current = true;
+      handleLoadExternalData();
+    }
+  }, [apiStatus, handleLoadExternalData]);
 
   // Generate explanatory text for price prediction
   const explanationText = useMemo(() => {
