@@ -4,7 +4,9 @@ import CoefficientEditor from './components/CoefficientEditor';
 import NormalDistributionChart from './components/NormalDistributionChart';
 import Logo from './components/Logo';
 import ModelOverview from './components/ModelOverview';
-type TabKey = 'dashboard' | 'model';
+import HistoricalTrends from './components/HistoricalTrends';
+import LagAllocationControls from './components/LagAllocationControls';
+type TabKey = 'dashboard' | 'model' | 'lags';
 import {
   CostInputs as CostInputsType,
   ModelCoefficients,
@@ -116,6 +118,28 @@ const buildSeriesPayload = (data?: LatestDataResponse | null) => {
   return payload;
 };
 
+const lagFieldMap: Record<'t' | 't1' | 't2' | 't3', Array<keyof ModelCoefficients>> = {
+  t: ['labor_t', 'capital_t', 'materials_t', 'energy_t', 'other_t'],
+  t1: ['labor_t1', 'capital_t1', 'materials_t1', 'energy_t1', 'other_t1'],
+  t2: ['labor_t2', 'capital_t2', 'materials_t2', 'energy_t2', 'other_t2'],
+  t3: ['labor_t3', 'capital_t3', 'materials_t3', 'energy_t3', 'other_t3'],
+};
+
+const applyLagAllocation = (
+  coefficients: ModelCoefficients,
+  allocation: Record<'t' | 't1' | 't2' | 't3', number>
+): ModelCoefficients => {
+  const adjusted: ModelCoefficients = { ...coefficients };
+  const baseShare = 25; // default distribution
+  (Object.keys(lagFieldMap) as Array<'t' | 't1' | 't2' | 't3'>).forEach((lag) => {
+    const multiplier = allocation[lag] / baseShare;
+    lagFieldMap[lag].forEach((field) => {
+      adjusted[field] = coefficients[field] * multiplier;
+    });
+  });
+  return adjusted;
+};
+
 const classifyPriceChange = (mean: number) => {
   if (mean < 2) {
     return {
@@ -154,7 +178,46 @@ const classifyConfidence = (range: number) => {
   };
 };
 
-const describeTrend = (delta: number | null, mean: number) => {
+const describeTrend = (
+  delta: number | null,
+  mean: number,
+  data: LatestDataResponse | null,
+  months: number
+) => {
+  const labels: Record<string, string> = {
+    labor: 'labor',
+    capital: 'capital',
+    materials: 'materials',
+    energy: 'energy',
+  };
+  const history = data?.history || {};
+  const changes = Object.entries(labels)
+    .map(([key, label]) => {
+      const series = history[key];
+      if (!series || series.length < 2) return null;
+      const window = series.slice(-months);
+      if (window.length < 2) return null;
+      const start = window[0].pct_change;
+      const end = window[window.length - 1].pct_change;
+      return { key: label, delta: end - start };
+    })
+    .filter(Boolean) as Array<{ key: string; delta: number }>;
+
+  const trending = changes
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 2);
+
+  if (trending.length > 0) {
+    const descriptions = trending.map((item) => {
+      const direction = item.delta >= 0 ? 'rising' : 'cooling';
+      return `${item.key} costs are ${direction} by ${Math.abs(item.delta).toFixed(2)} pts`; 
+    });
+    return {
+      label: 'Trend insight',
+      description: `${descriptions.join(' while ')}, influencing the ${mean.toFixed(2)}% outlook over the last ${months} months.`,
+    };
+  }
+
   if (delta === null) {
     return {
       label: 'Baseline established',
@@ -292,6 +355,13 @@ function App() {
   const previousMeanRef = useRef<number | null>(null);
   const [latestData, setLatestData] = useState<LatestDataResponse | null>(null);
   const [recommendedMix, setRecommendedMix] = useState<CostInputsType | null>(null);
+  const [historyMonths, setHistoryMonths] = useState(6);
+  const [lagAllocation, setLagAllocation] = useState<Record<'t' | 't1' | 't2' | 't3', number>>({
+    t: 25,
+    t1: 25,
+    t2: 25,
+    t3: 25,
+  });
 
   useEffect(() => {
     if (!apiBaseUrl) {
@@ -331,6 +401,8 @@ function App() {
 
   const totalWeight = useMemo(() => getTotalWeight(costInputs), [costInputs]);
   const weightsValid = useMemo(() => weightsAreValid(costInputs), [costInputs]);
+  const lagAllocationTotal = lagAllocation.t + lagAllocation.t1 + lagAllocation.t2 + lagAllocation.t3;
+  const lagAllocationValid = Math.abs(lagAllocationTotal - 100) < 0.01;
 
   const resetPredictionState = useCallback(() => {
     setPrediction(null);
@@ -345,21 +417,25 @@ function App() {
       coefficientSnapshot: ModelCoefficients,
       seriesOverride?: LatestDataResponse | null
     ) => {
-      if (!weightsAreValid(inputsSnapshot) || !apiBaseUrl) {
+      if (!weightsAreValid(inputsSnapshot) || !apiBaseUrl || !lagAllocationValid) {
         resetPredictionState();
         if (!apiBaseUrl) {
           console.warn('API base URL is not configured. Prediction skipped.');
+        }
+        if (!lagAllocationValid) {
+          console.warn('Lag allocation must total 100%.');
         }
         return;
       }
 
       setIsCalculating(true);
       try {
+        const weightedCoefficients = applyLagAllocation(coefficientSnapshot, lagAllocation);
         const baselineData = seriesOverride ?? latestData;
         const newPrediction = await calculatePrediction(
           apiBaseUrl,
           inputsSnapshot,
-          coefficientSnapshot,
+          weightedCoefficients,
           baselineData
         );
         setPrediction(newPrediction);
@@ -542,7 +618,7 @@ function App() {
     const meanValue = Math.max(0, prediction.mean);
     const priceBand = classifyPriceChange(meanValue);
     const confidenceBand = classifyConfidence(Math.max(0, prediction.max - prediction.min));
-    const trendBand = describeTrend(trendDelta, meanValue);
+    const trendBand = describeTrend(trendDelta, meanValue, latestData, historyMonths);
 
     return {
       headline: `Model projects ${meanValue.toFixed(2)}% price change.`,
@@ -553,7 +629,7 @@ function App() {
       trendLabel: trendBand.label,
       trendDescription: trendBand.description,
     };
-  }, [prediction, trendDelta]);
+  }, [prediction, trendDelta, latestData, historyMonths]);
 
   const apiStatusColor =
     apiStatus === 'ok' ? 'text-green-600' : apiStatus === 'checking' ? 'text-amber-600' : 'text-red-600';
@@ -592,6 +668,7 @@ function App() {
             {[
               { key: 'dashboard', label: 'Forecast Dashboard' },
               { key: 'model', label: 'Model Insights' },
+              { key: 'lags', label: 'Lag Controls' },
             ].map((tab) => {
               const isActive = activeTab === tab.key;
               return (
@@ -613,9 +690,9 @@ function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-8">
-        {activeTab === 'dashboard' ? (
-          <div className="space-y-8">
+      <main className="container mx-auto px-6 py-8 space-y-8">
+        {activeTab === 'dashboard' && (
+          <>
             <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-primary">
               <div className="flex flex-col gap-2">
                 <h2 className="text-xl font-semibold text-primary">API Connection</h2>
@@ -629,7 +706,6 @@ function App() {
               </div>
             </div>
 
-            {/* Cost Inputs Section */}
             <CostInputs
               inputs={costInputs}
               onInputChange={handleInputChange}
@@ -640,14 +716,6 @@ function App() {
               recommendedShares={recommendedMix}
             />
 
-            {/* Coefficient Editor Section */}
-            <CoefficientEditor
-              coefficients={coefficients}
-              onCoefficientChange={handleCoefficientChange}
-              onResetToDefaults={handleResetCoefficients}
-            />
-
-            {/* Prediction Visualization Section */}
             {isCalculating && (
               <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-primary">
                 <p className="text-center text-gray-500">Calculating prediction...</p>
@@ -658,11 +726,28 @@ function App() {
               explanationText={explanationText}
               summary={predictionSummary}
             />
-          </div>
-        ) : (
-          <div className="space-y-8">
+          </>
+        )}
+
+        {activeTab === 'model' && (
+          <>
             <ModelOverview />
-          </div>
+            <HistoricalTrends data={latestData} months={historyMonths} onMonthsChange={setHistoryMonths} />
+          </>
+        )}
+
+        {activeTab === 'lags' && (
+          <>
+            <LagAllocationControls allocation={lagAllocation} onUpdate={(field, value) => setLagAllocation((prev) => ({
+              ...prev,
+              [field]: Math.max(0, Math.min(100, value)),
+            }))} />
+            <CoefficientEditor
+              coefficients={coefficients}
+              onCoefficientChange={handleCoefficientChange}
+              onResetToDefaults={handleResetCoefficients}
+            />
+          </>
         )}
       </main>
 
