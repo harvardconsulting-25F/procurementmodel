@@ -487,9 +487,15 @@ function App() {
 
   const handleCoefficientChange = useCallback(
     (field: keyof ModelCoefficients, value: number) => {
-      setCoefficients((prev) => ({ ...prev, [field]: value }));
+      setCoefficients((prev) => {
+        const updated = { ...prev, [field]: value };
+        if (weightsValid && lagAllocationValid) {
+          runPrediction(costInputs, updated);
+        }
+        return updated;
+      });
     },
-    []
+    [weightsValid, lagAllocationValid, costInputs, runPrediction]
   );
 
   const handleResetCoefficients = useCallback(() => {
@@ -536,12 +542,18 @@ function App() {
     }
   }, [apiBaseUrl, coefficients, costInputs, runPrediction, resetPredictionState, weightsValid]);
 
+useEffect(() => {
+  if (apiStatus === 'ok' && !hasAutoLoaded.current) {
+    hasAutoLoaded.current = true;
+    handleLoadExternalData();
+  }
+}, [apiStatus, handleLoadExternalData]);
+
   useEffect(() => {
-    if (apiStatus === 'ok' && !hasAutoLoaded.current) {
-      hasAutoLoaded.current = true;
-      handleLoadExternalData();
+    if (weightsValid && lagAllocationValid && latestData) {
+      runPrediction(costInputs, coefficients);
     }
-  }, [apiStatus, handleLoadExternalData]);
+  }, [lagAllocation, weightsValid, lagAllocationValid, latestData, costInputs, coefficients, runPrediction]);
 
   // Generate explanatory text for price prediction
   const explanationText = useMemo(() => {

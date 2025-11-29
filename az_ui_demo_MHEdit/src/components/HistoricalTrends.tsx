@@ -28,7 +28,7 @@ const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ history, months, on
     const entries = seriesMap[key] || [];
     const display = entries.slice(-months).map((entry) => ({
       date: entry.date || '',
-      value: entry.pct_change ?? 0,
+      value: Number(entry.pct_change) ?? 0,
     }));
     return {
       key,
