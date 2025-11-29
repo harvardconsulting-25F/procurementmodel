@@ -95,6 +95,21 @@ const normalizeWeightsFromFullData = (data: LatestDataResponse): CostInputsType 
   return allocations;
 };
 
+const buildSeriesPayload = (data?: LatestDataResponse | null) => {
+  if (!data?.full_data) {
+    return undefined;
+  }
+
+  const payload: Record<string, number[]> = {};
+  CATEGORY_ORDER.forEach((key) => {
+    const series = data.full_data?.[key];
+    if (Array.isArray(series) && series.length) {
+      payload[key] = series.slice(-4);
+    }
+  });
+  return payload;
+};
+
 const classifyPriceChange = (mean: number) => {
   if (mean < 2) {
     return {
@@ -162,7 +177,8 @@ const describeTrend = (delta: number | null, mean: number) => {
 const calculatePrediction = async (
   apiBaseUrl: string,
   inputs: CostInputsType,
-  coefficients: ModelCoefficients
+  coefficients: ModelCoefficients,
+  baselineData?: LatestDataResponse | null
 ): Promise<PredictionResult | null> => {
   try {
     if (!apiBaseUrl) {
@@ -193,18 +209,17 @@ const calculatePrediction = async (
       other_t3: coefficients.other_t3,
     };
 
+    const seriesPayload = buildSeriesPayload(baselineData);
+
     const response = await fetch(`${apiBaseUrl}/api/predict`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        labor: inputs.labor,
-        capital: inputs.capital,
-        materials: inputs.materials,
-        energy: inputs.energy,
-        other: inputs.other,
+        weights: inputs,
         coefficients: apiCoefficients,
+        series: seriesPayload,
       }),
     });
 
@@ -269,6 +284,8 @@ function App() {
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const [apiStatusMessage, setApiStatusMessage] = useState<string>('Checking connection...');
   const previousMeanRef = useRef<number | null>(null);
+  const [latestData, setLatestData] = useState<LatestDataResponse | null>(null);
+  const [recommendedMix, setRecommendedMix] = useState<CostInputsType | null>(null);
 
   useEffect(() => {
     if (!apiBaseUrl) {
@@ -317,7 +334,11 @@ function App() {
 
 
   const runPrediction = useCallback(
-    async (inputsSnapshot: CostInputsType, coefficientSnapshot: ModelCoefficients) => {
+    async (
+      inputsSnapshot: CostInputsType,
+      coefficientSnapshot: ModelCoefficients,
+      seriesOverride?: LatestDataResponse | null
+    ) => {
       if (!weightsAreValid(inputsSnapshot) || !apiBaseUrl) {
         resetPredictionState();
         if (!apiBaseUrl) {
@@ -328,7 +349,13 @@ function App() {
 
       setIsCalculating(true);
       try {
-        const newPrediction = await calculatePrediction(apiBaseUrl, inputsSnapshot, coefficientSnapshot);
+        const baselineData = seriesOverride ?? latestData;
+        const newPrediction = await calculatePrediction(
+          apiBaseUrl,
+          inputsSnapshot,
+          coefficientSnapshot,
+          baselineData
+        );
         setPrediction(newPrediction);
         if (newPrediction) {
           const previousMean = previousMeanRef.current;
@@ -344,7 +371,7 @@ function App() {
         setIsCalculating(false);
       }
     },
-    [apiBaseUrl, resetPredictionState]
+    [apiBaseUrl, latestData, resetPredictionState]
   );
 
   const handleInputChange = useCallback(
@@ -390,10 +417,11 @@ function App() {
     setIsLoadingExternal(true);
     try {
       const externalPayload = await loadExternalData(apiBaseUrl);
+      setLatestData(externalPayload);
       const normalizedWeights = normalizeWeightsFromFullData(externalPayload);
-      setCostInputs(normalizedWeights);
-      if (weightsAreValid(normalizedWeights)) {
-        await runPrediction(normalizedWeights, coefficients);
+      setRecommendedMix(normalizedWeights);
+      if (weightsValid) {
+        await runPrediction(costInputs, coefficients, externalPayload);
       } else {
         resetPredictionState();
       }
@@ -404,7 +432,7 @@ function App() {
     } finally {
       setIsLoadingExternal(false);
     }
-  }, [apiBaseUrl, coefficients, runPrediction, resetPredictionState]);
+  }, [apiBaseUrl, coefficients, costInputs, runPrediction, resetPredictionState, weightsValid]);
 
   // Generate explanatory text for price prediction
   const explanationText = useMemo(() => {
@@ -603,6 +631,7 @@ function App() {
               isLoadingExternal={isLoadingExternal}
               externalLoadEnabled={externalLoadEnabled}
               externalLoadHint={externalLoadHint}
+              recommendedShares={recommendedMix}
             />
 
             {/* Coefficient Editor Section */}

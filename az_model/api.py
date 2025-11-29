@@ -12,6 +12,11 @@ from typing import Dict, List, Optional
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+# Vercel expects a module-level variable named `app`.
+# Some Vercel builds look for `app = ...` in `api/index.py` or similar.
+# Expose an alias so `app` is discoverable even if the module is imported differently.
+flask_app = app
+
 # === CONFIGURATION ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(BASE_DIR, "data")
@@ -349,31 +354,61 @@ def predict():
     try:
         req_data = request.get_json()
         
-        # Load latest data as baseline
         latest_data = load_latest_data()
-        
+        weights_payload = req_data.get("weights")
+        series_override = req_data.get("series") if isinstance(req_data.get("series"), dict) else {}
+
         def ensure_series(series: List[float]) -> List[float]:
             if len(series) >= 4:
                 return series[-4:]
             return ([0.0] * (4 - len(series))) + series
-        
+
+        def get_base_series(category_key: str) -> List[float]:
+            override_series = series_override.get(category_key)
+            if isinstance(override_series, list) and len(override_series) > 0:
+                normalized: List[float] = []
+                for val in override_series:
+                    try:
+                        normalized.append(float(val))
+                    except (TypeError, ValueError):
+                        continue
+                if normalized:
+                    return ensure_series(normalized)
+                return ensure_series(override_series)
+            return ensure_series(latest_data.get(category_key, []))
+
+        def apply_weight(series: List[float], weight_value) -> List[float]:
+            try:
+                weight = float(weight_value)
+            except (TypeError, ValueError):
+                weight = 0.0
+            weight = max(0.0, min(weight, 100.0)) / 100.0
+            return [round(val * weight, 6) for val in series]
+
         def process_input(value, category_key: str):
-            base_series = ensure_series(latest_data.get(category_key, []))
+            base_series = get_base_series(category_key)
             if isinstance(value, list) and len(value) == 4:
                 return value
             if isinstance(value, (int, float)):
                 weight = max(0.0, min(float(value), 100.0)) / 100.0
-                if latest_data.get(category_key):
+                if base_series:
                     return [round(val * weight, 6) for val in base_series]
                 manual_value = round(weight * 100, 6)
                 return [manual_value] * 4
             return base_series if base_series else [0.0, 0.0, 0.0, 0.0]
-        
-        labor = process_input(req_data.get("labor"), "labor")
-        capital = process_input(req_data.get("capital"), "capital")
-        materials = process_input(req_data.get("materials"), "materials")
-        energy = process_input(req_data.get("energy"), "energy")
-        other = process_input(req_data.get("other"), "other")
+
+        if isinstance(weights_payload, dict):
+            labor = apply_weight(get_base_series("labor"), weights_payload.get("labor", 0))
+            capital = apply_weight(get_base_series("capital"), weights_payload.get("capital", 0))
+            materials = apply_weight(get_base_series("materials"), weights_payload.get("materials", 0))
+            energy = apply_weight(get_base_series("energy"), weights_payload.get("energy", 0))
+            other = apply_weight(get_base_series("other"), weights_payload.get("other", 0))
+        else:
+            labor = process_input(req_data.get("labor"), "labor")
+            capital = process_input(req_data.get("capital"), "capital")
+            materials = process_input(req_data.get("materials"), "materials")
+            energy = process_input(req_data.get("energy"), "energy")
+            other = process_input(req_data.get("other"), "other")
         
         # Get custom coefficients if provided
         coefficients = req_data.get("coefficients")

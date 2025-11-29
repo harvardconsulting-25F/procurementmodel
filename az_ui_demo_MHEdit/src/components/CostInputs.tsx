@@ -8,6 +8,7 @@ interface CostInputsProps {
   isLoadingExternal?: boolean;
   externalLoadEnabled?: boolean;
   externalLoadHint?: string;
+  recommendedShares?: CostInputsType | null;
 }
 
 const CostInputs: React.FC<CostInputsProps> = ({
@@ -17,6 +18,7 @@ const CostInputs: React.FC<CostInputsProps> = ({
   isLoadingExternal = false,
   externalLoadEnabled = true,
   externalLoadHint,
+  recommendedShares = null,
 }) => {
   const inputFields: Array<{ key: keyof CostInputsType; label: string; icon: string }> = [
     { key: 'labor', label: 'Labor', icon: '👥' },
@@ -95,6 +97,15 @@ const CostInputs: React.FC<CostInputsProps> = ({
           </span>{' '}
           (must equal 100%). Use the external data loader to auto-balance the latest market data, or enter your own mix manually.
         </p>
+        {recommendedShares && (
+          <p className="text-xs text-gray-500 mt-1">
+            Recommended mix from latest external data:{' '}
+            {inputFields
+              .map((field) => `${field.label} ${recommendedShares[field.key].toFixed(2)}%`)
+              .join(' · ')}
+            .
+          </p>
+        )}
       </div>
     </div>
   );
