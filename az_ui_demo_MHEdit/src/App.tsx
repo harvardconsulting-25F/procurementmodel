@@ -5,7 +5,8 @@ import NormalDistributionChart from './components/NormalDistributionChart';
 import Logo from './components/Logo';
 import ModelOverview from './components/ModelOverview';
 import HistoricalTrends from './components/HistoricalTrends';
-type TabKey = 'dashboard' | 'model';
+import LagAllocationControls from './components/LagAllocationControls';
+type TabKey = 'dashboard' | 'model' | 'lags';
 import {
   CostInputs as CostInputsType,
   ModelCoefficients,
@@ -125,6 +126,28 @@ const buildSeriesPayload = (
     }
   });
   return payload;
+};
+
+const lagFieldMap: Record<'t' | 't1' | 't2' | 't3', Array<keyof ModelCoefficients>> = {
+  t: ['labor_t', 'capital_t', 'materials_t', 'energy_t', 'other_t'],
+  t1: ['labor_t1', 'capital_t1', 'materials_t1', 'energy_t1', 'other_t1'],
+  t2: ['labor_t2', 'capital_t2', 'materials_t2', 'energy_t2', 'other_t2'],
+  t3: ['labor_t3', 'capital_t3', 'materials_t3', 'energy_t3', 'other_t3'],
+};
+
+const applyLagAllocation = (
+  coefficients: ModelCoefficients,
+  allocation: Record<'t' | 't1' | 't2' | 't3', number>
+): ModelCoefficients => {
+  const adjusted: ModelCoefficients = { ...coefficients };
+  const baseShare = 25;
+  (Object.keys(lagFieldMap) as Array<'t' | 't1' | 't2' | 't3'>).forEach((lag) => {
+    const multiplier = allocation[lag] / baseShare;
+    lagFieldMap[lag].forEach((field) => {
+      adjusted[field] = coefficients[field] * multiplier;
+    });
+  });
+  return adjusted;
 };
 
 
@@ -266,7 +289,7 @@ const calculatePrediction = async (
       other_t3: coefficients.other_t3,
     };
 
-    const seriesPayload = buildSeriesPayload(baselineData);
+    const seriesPayload = buildSeriesPayload(baselineData, baselineData?.history);
 
     const response = await fetch(`${apiBaseUrl}/api/predict`, {
       method: 'POST',
@@ -347,6 +370,12 @@ function App() {
   const [historyMonths, setHistoryMonths] = useState(6);
   const hasAutoLoaded = useRef(false);
   const [historyData, setHistoryData] = useState<Record<string, Array<{ date: string; pct_change: number }>> | null>(null);
+  const [lagAllocation, setLagAllocation] = useState<Record<'t' | 't1' | 't2' | 't3', number>>({
+    t: 25,
+    t1: 25,
+    t2: 25,
+    t3: 25,
+  });
 
   useEffect(() => {
     if (!apiBaseUrl) {
@@ -438,7 +467,7 @@ function App() {
         setIsCalculating(false);
       }
     },
-    [apiBaseUrl, latestData, historyData, resetPredictionState]
+    [apiBaseUrl, latestData, historyData, lagAllocation, lagAllocationValid, resetPredictionState]
   );
 
   const handleInputChange = useCallback(
@@ -487,13 +516,14 @@ function App() {
           console.warn('Unable to fetch history data', historyError);
         }
       }
-      const historyMap = historyPayload || {};
+      const historyMap = historyPayload || externalPayload.history || {};
       setHistoryData(historyMap);
-      setLatestData(externalPayload);
-      const normalizedWeights = normalizeWeightsFromFullData(externalPayload, historyMap);
+      const payloadWithHistory = { ...externalPayload, history: historyMap };
+      setLatestData(payloadWithHistory);
+      const normalizedWeights = normalizeWeightsFromFullData(payloadWithHistory, historyMap);
       setRecommendedMix(normalizedWeights);
       if (weightsValid) {
-        await runPrediction(costInputs, coefficients, externalPayload);
+        await runPrediction(costInputs, coefficients, payloadWithHistory);
       } else {
         resetPredictionState();
       }
@@ -729,7 +759,7 @@ function App() {
         {activeTab === 'model' && (
           <>
             <ModelOverview />
-            <HistoricalTrends data={latestData} months={historyMonths} onMonthsChange={setHistoryMonths} />
+            <HistoricalTrends history={historyData} months={historyMonths} onMonthsChange={setHistoryMonths} />
             <CoefficientEditor
               coefficients={coefficients}
               onCoefficientChange={handleCoefficientChange}
