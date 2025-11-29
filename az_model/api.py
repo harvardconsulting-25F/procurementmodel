@@ -100,50 +100,51 @@ if AUTO_BUILD_DATA:
         print(f"⚠️ Auto data build failed during startup: {exc}")
 
 
-def load_latest_data() -> Dict[str, List[float]]:
-    """
-    Load the latest 4 percentage changes for each category from CSV.
-    Returns data in format: {category: [t-3, t-2, t-1, t]}
-    """
+def load_latest_data(history_points: int = 24) -> Dict[str, Dict[str, List]]:
+    """Return historical pct-change series for each category."""
     try:
         ensure_compiled_data()
         if not os.path.exists(compiled_file):
             raise FileNotFoundError(f"Data file not found: {compiled_file}")
-        
+
         df = pd.read_csv(compiled_file)
-        df = df[["category", "pct_change"]].dropna().reset_index(drop=True)
-        
-        capital = df[df["category"] == "capital"]["pct_change"].tail(4).tolist()
-        energy = df[df["category"] == "energy"]["pct_change"].tail(4).tolist()
-        materials = df[df["category"] == "materials"]["pct_change"].tail(4).tolist()
-        
-        # Check if labor data exists, otherwise use dummy data
-        labor_df = df[df["category"] == "labor"]
-        if len(labor_df) >= 4:
-            labor = labor_df["pct_change"].tail(4).tolist()
-        else:
-            # Dummy data as fallback
-            labor = [1, 2, 3, 4]
-        
-        # Ensure we have at least some data for each category
-        if len(capital) == 0:
-            capital = [0, 0, 0, 0]
-        if len(energy) == 0:
-            energy = [0, 0, 0, 0]
-        if len(materials) == 0:
-            materials = [0, 0, 0, 0]
-        
-        return {
-            "labor": labor,
-            "capital": capital,
-            "materials": materials,
-            "energy": energy,
-            "other": [0, 0, 0, 0],  # Placeholder manual input channel
+        if "date" not in df.columns:
+            df["date"] = pd.date_range(end=pd.Timestamp.today(), periods=len(df))
+        df = df[["category", "pct_change", "date"]].dropna().reset_index(drop=True)
+
+        response: Dict[str, Dict[str, List]] = {}
+        categories = ["labor", "capital", "materials", "energy"]
+        for category in categories:
+            category_df = df[df["category"] == category].tail(history_points)
+            history_records = []
+            for _, row in category_df.iterrows():
+                history_records.append({
+                    "date": str(row["date"]),
+                    "pct_change": float(row["pct_change"])
+                })
+
+            values = [record["pct_change"] for record in history_records]
+            recent = values[-4:] if len(values) >= 4 else values
+            if not recent:
+                recent = [0.0, 0.0, 0.0, 0.0]
+
+            response[category] = {
+                "history": history_records,
+                "recent": recent,
+                "latest": recent[-1] if recent else 0.0,
+            }
+
+        # placeholder for manual/other channel
+        response["other"] = {
+            "history": [{"date": "", "pct_change": 0.0} for _ in range(min(4, history_points))],
+            "recent": [0.0, 0.0, 0.0, 0.0],
+            "latest": 0.0,
         }
+        return response
     except Exception as e:
         import traceback
         error_msg = f"Error loading data: {str(e)}\n{traceback.format_exc()}"
-        print(error_msg)  # Log to console
+        print(error_msg)
         raise Exception(error_msg)
 
 
@@ -296,30 +297,30 @@ def get_latest_data():
     """
     try:
         data = load_latest_data()
-        
-        # Return the most recent values (index 3, which is t)
-        # Handle cases where we might not have 4 values
-        def get_latest_value(values, default=0):
-            if len(values) >= 4:
-                return values[3]
-            elif len(values) > 0:
-                return values[-1]  # Return the last available value
-            else:
-                return default
-        
+
+        def latest_value(category: str) -> float:
+            return float(data.get(category, {}).get("latest", 0.0))
+
         result = {
-            "labor": get_latest_value(data["labor"]),
-            "capital": get_latest_value(data["capital"]),
-            "materials": get_latest_value(data["materials"]),
-            "energy": get_latest_value(data["energy"]),
-            "other": get_latest_value(data.get("other", [0, 0, 0, 0]), 0),
+            "labor": latest_value("labor"),
+            "capital": latest_value("capital"),
+            "materials": latest_value("materials"),
+            "energy": latest_value("energy"),
+            "other": latest_value("other"),
             "full_data": {
-                "labor": data["labor"],
-                "capital": data["capital"],
-                "materials": data["materials"],
-                "energy": data["energy"],
-                "other": data.get("other", [0, 0, 0, 0]),
-            }
+                "labor": data.get("labor", {}).get("recent", []),
+                "capital": data.get("capital", {}).get("recent", []),
+                "materials": data.get("materials", {}).get("recent", []),
+                "energy": data.get("energy", {}).get("recent", []),
+                "other": data.get("other", {}).get("recent", []),
+            },
+            "history": {
+                "labor": data.get("labor", {}).get("history", []),
+                "capital": data.get("capital", {}).get("history", []),
+                "materials": data.get("materials", {}).get("history", []),
+                "energy": data.get("energy", {}).get("history", []),
+                "other": data.get("other", {}).get("history", []),
+            },
         }
         
         return jsonify(result)
@@ -330,6 +331,20 @@ def get_latest_data():
             "traceback": traceback.format_exc()
         }
         print(f"Error in get_latest_data: {error_detail}")  # Log to console
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/data/history', methods=['GET'])
+def get_history_data():
+    try:
+        data = load_latest_data()
+        return jsonify({
+            "labor": data.get("labor", {}).get("history", []),
+            "capital": data.get("capital", {}).get("history", []),
+            "materials": data.get("materials", {}).get("history", []),
+            "energy": data.get("energy", {}).get("history", []),
+        })
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -375,7 +390,8 @@ def predict():
                 if normalized:
                     return ensure_series(normalized)
                 return ensure_series(override_series)
-            return ensure_series(latest_data.get(category_key, []))
+            category_payload = latest_data.get(category_key, {})
+            return ensure_series(category_payload.get("recent", []))
 
         def apply_weight(series: List[float], weight_value) -> List[float]:
             try:
