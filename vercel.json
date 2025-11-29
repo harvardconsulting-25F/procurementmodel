@@ -1,0 +1,25 @@
+{
+  "builds": [
+    {
+      "src": "az_model/api.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "az_ui_demo_MHEdit/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "az_ui_demo_MHEdit/dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api(?:/.*)?",
+      "dest": "az_model/api.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "az_ui_demo_MHEdit/dist/$1"
+    }
+  ]
+}

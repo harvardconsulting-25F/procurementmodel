@@ -43,9 +43,23 @@ npm run dev -- --host
 ```
 
 Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`.  
-When you build the UI without a `VITE_API_URL`, it now targets the hosted API at `https://procurementmodel-hpt6-otzh3gqpu-harvardconsulting-25fs-projects.vercel.app`. For local development, set `VITE_API_URL=http://localhost:5001` before running `npm run dev`.
+When the UI is built without `VITE_API_URL`, it automatically calls `/api` on the same origin (perfect for the shared Vercel deployment described below). For local dev, set `VITE_API_URL=http://localhost:5001` or run the dev server (which already targets localhost).
 
 ---
+
+## Vercel Deployment (UI + API)
+
+This repo ships with a `vercel.json` so one Vercel project can host both the Flask API and the React UI.
+
+1. **Create a Vercel project** connected to this repo (monorepo support is automatic because of `vercel.json`).
+2. **Environment variables**:
+   - None required for production because the UI now calls `/api` on the same domain.
+   - Optional: `AUTO_BUILD_DATA=1` (default) controls whether the API regenerates its data on cold start.
+3. **Deploy**. Vercel will:
+   - Build the Python API from `az_model/api.py` (served under `/api/*`).
+   - `npm install && npm run build` inside `az_ui_demo_MHEdit/` and serve the static `dist/` output for every non-API route.
+
+If you prefer separate Vercel projects (one for API, one for UI), you can still point each project’s “Root Directory” to `az_model` or `az_ui_demo_MHEdit` respectively and set `VITE_API_URL` to the API project’s URL.
 
 ## GitHub Pages Deployment
 
