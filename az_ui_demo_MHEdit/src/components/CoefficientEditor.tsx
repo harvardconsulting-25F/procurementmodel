@@ -1,5 +1,5 @@
 import React from 'react';
-import { ModelCoefficients, CoefficientLevel, numericToLevel, levelToNumeric } from '../types';
+import { ModelCoefficients } from '../types';
 
 interface CoefficientEditorProps {
   coefficients: ModelCoefficients;
@@ -59,16 +59,6 @@ const CoefficientEditor: React.FC<CoefficientEditorProps> = ({
     },
   ];
 
-  const handleLevelChange = (field: keyof ModelCoefficients, level: CoefficientLevel) => {
-    const originalValue = coefficients[field];
-    const numericValue = levelToNumeric(level, originalValue);
-    onCoefficientChange(field, numericValue);
-  };
-
-  const getCurrentLevel = (field: keyof ModelCoefficients): CoefficientLevel => {
-    return numericToLevel(coefficients[field]);
-  };
-
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-primary">
       <div className="flex items-center justify-between mb-6">
@@ -91,15 +81,13 @@ const CoefficientEditor: React.FC<CoefficientEditorProps> = ({
                   <label className="block text-sm font-medium text-gray-500">
                     {field.label}
                   </label>
-                  <select
-                    value={getCurrentLevel(field.key)}
-                    onChange={(e) => handleLevelChange(field.key, e.target.value as CoefficientLevel)}
+                  <input
+                    type="number"
+                    step={0.01}
+                    value={coefficients[field.key]}
+                    onChange={(event) => onCoefficientChange(field.key, Number(event.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
-                  >
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
+                  />
                 </div>
               ))}
             </div>
@@ -118,4 +106,3 @@ const CoefficientEditor: React.FC<CoefficientEditorProps> = ({
 };
 
 export default CoefficientEditor;
-

@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import CostInputs from './components/CostInputs';
+import CoefficientEditor from './components/CoefficientEditor';
 import NormalDistributionChart from './components/NormalDistributionChart';
 import Logo from './components/Logo';
 import ModelOverview from './components/ModelOverview';
@@ -362,6 +363,7 @@ function App() {
     t2: 25,
     t3: 25,
   });
+  const hasAutoLoaded = useRef(false);
 
   useEffect(() => {
     if (!apiBaseUrl) {
@@ -398,6 +400,13 @@ function App() {
       controller.abort();
     };
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (apiStatus === 'ok' && !hasAutoLoaded.current) {
+      hasAutoLoaded.current = true;
+      handleLoadExternalData();
+    }
+  }, [apiStatus, handleLoadExternalData]);
 
   const totalWeight = useMemo(() => getTotalWeight(costInputs), [costInputs]);
   const weightsValid = useMemo(() => weightsAreValid(costInputs), [costInputs]);
@@ -471,6 +480,17 @@ function App() {
     [costInputs, coefficients, resetPredictionState, runPrediction]
   );
 
+  const handleCoefficientChange = useCallback(
+    (field: keyof ModelCoefficients, value: number) => {
+      setCoefficients((prev) => ({ ...prev, [field]: value }));
+    },
+    []
+  );
+
+  const handleResetCoefficients = useCallback(() => {
+    setCoefficients(DEFAULT_COEFFICIENTS);
+  }, []);
+
   const handleLoadExternalData = useCallback(async () => {
     if (!apiBaseUrl) {
       alert('Enter the API base URL to load external data.');
@@ -480,8 +500,23 @@ function App() {
     setIsLoadingExternal(true);
     try {
       const externalPayload = await loadExternalData(apiBaseUrl);
-      setLatestData(externalPayload);
-      const normalizedWeights = normalizeWeightsFromFullData(externalPayload);
+      let historyPayload = externalPayload.history;
+      if (!historyPayload || Object.keys(historyPayload).length === 0) {
+        try {
+          const historyResponse = await fetch(`${apiBaseUrl}/api/data/history`);
+          if (historyResponse.ok) {
+            historyPayload = await historyResponse.json();
+          }
+        } catch (historyError) {
+          console.warn('Unable to fetch history data', historyError);
+        }
+      }
+      const payloadWithHistory: LatestDataResponse = {
+        ...externalPayload,
+        history: historyPayload || {},
+      };
+      setLatestData(payloadWithHistory);
+      const normalizedWeights = normalizeWeightsFromFullData(payloadWithHistory);
       setRecommendedMix(normalizedWeights);
       if (weightsValid) {
         await runPrediction(costInputs, coefficients, externalPayload);
@@ -714,6 +749,11 @@ function App() {
           <>
             <ModelOverview />
             <HistoricalTrends data={latestData} months={historyMonths} onMonthsChange={setHistoryMonths} />
+            <CoefficientEditor
+              coefficients={coefficients}
+              onCoefficientChange={handleCoefficientChange}
+              onResetToDefaults={handleResetCoefficients}
+            />
           </>
         )}
 
