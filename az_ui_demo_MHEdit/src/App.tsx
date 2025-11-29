@@ -42,6 +42,7 @@ const DEFAULT_COEFFICIENTS: ModelCoefficients = {
   other_t3: -0.02,
 };
 
+const DEFAULT_PRODUCTION_API = 'https://procurementmodel-hpt6-otzh3gqpu-harvardconsulting-25fs-projects.vercel.app';
 const DEFAULT_LOCAL_API = 'http://localhost:5001';
 
 const sanitizeUrl = (value: string): string => value.replace(/\/+$/, '');
@@ -51,7 +52,9 @@ const getInitialApiBaseUrl = (): string => {
   if (envUrl) {
     return sanitizeUrl(envUrl);
   }
-  return DEFAULT_LOCAL_API;
+  return typeof window !== 'undefined' && window.location.hostname === 'localhost'
+    ? DEFAULT_LOCAL_API
+    : DEFAULT_PRODUCTION_API;
 };
 
 const INITIAL_WEIGHTS: CostInputsType = {

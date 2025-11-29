@@ -42,7 +42,8 @@ npm install
 npm run dev -- --host
 ```
 
-Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`.
+Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`.  
+When you build the UI without a `VITE_API_URL`, it now targets the hosted API at `https://procurementmodel-hpt6-otzh3gqpu-harvardconsulting-25fs-projects.vercel.app`. For local development, set `VITE_API_URL=http://localhost:5001` before running `npm run dev`.
 
 ---
 
