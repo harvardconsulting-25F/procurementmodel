@@ -8,6 +8,24 @@ Full-stack toolkit for ingesting macro & supplier data, running the AZ bioresins
 
 ---
 
+## Handoff Cheatsheet
+- **Run it locally**: `python az_model/api.py` (backend) + `npm run dev` in `az_ui_demo_MHEdit` (frontend). Default API is `http://localhost:5001`.
+- **Change API URL**: Set `VITE_API_URL=<api-base>` before `npm run dev/build`. The UI falls back to `/api` on the same origin when unset.
+- **Buttons at a glance**:
+  - Forecast Dashboard → `Load from External Data`: pulls latest MoM % changes from `/api/data/latest`, rebalances weights, sets recommended mix.
+  - Forecast Dashboard → Cost Inputs fields: type 0–100 allocations; must total 100% or the chart hides.
+  - Forecast Dashboard → Chart: displays truncated normal distribution; headline/price band/confidence/trend cards update live.
+  - Model Insights tab: narrative + historical trend slider (3–12 months) + coefficient editor (`Reset to Defaults` restores `DEFAULT_COEFFICIENTS`).
+  - Lag Controls tab: four inputs for t, t-1, t-2, t-3 influence; must sum to 100% or predictions pause.
+- **Where to edit logic**:
+  - API math & defaults: `az_model/api.py`.
+  - UI defaults & tabs: `az_ui_demo_MHEdit/src/App.tsx`.
+  - Distribution chart: `az_ui_demo_MHEdit/src/components/NormalDistributionChart.tsx`.
+  - Coefficient editor: `az_ui_demo_MHEdit/src/components/CoefficientEditor.tsx`.
+  - Lag weights: `az_ui_demo_MHEdit/src/components/LagAllocationControls.tsx`.
+  - External data loader: `az_ui_demo_MHEdit/src/components/CostInputs.tsx`.
+- **Squash/hide commit messages**: `git rebase -i --root` (change all to `squash`/`fixup` with one final message) then `git push --force-with-lease origin main`. Coordinate with collaborators because history rewrites require them to reset.
+
 ## Repository Structure
 
 | Path | Description |
@@ -46,6 +64,34 @@ Backend defaults to `http://127.0.0.1:5001`, frontend to `http://127.0.0.1:5173`
 When the UI is built without `VITE_API_URL`, it automatically calls `/api` on the same origin (perfect for the shared Vercel deployment described below). For local dev, set `VITE_API_URL=http://localhost:5001` or run the dev server (which already targets localhost).
 
 ---
+
+## UI Walkthrough (What Every Button Does)
+
+**Forecast Dashboard tab**
+- `Load from External Data` (top-right of Cost Inputs): calls `/api/data/latest` (and `/api/data/history` if available), normalizes weights based on latest changes, and shows a “recommended mix” hint.
+- Cost input number fields (Labor, Capital, Materials, Energy, Other): accept 0–100; the total must equal 100% or predictions and the chart are suppressed. Values auto-clamp to valid ranges.
+- API connection card: pings `/api/health`; shows status and the resolved base URL (from `VITE_API_URL` or same-origin `/api`).
+- Distribution panel: renders a truncated normal curve using API results, shows mean/SD/68%/95% ranges, and adds three summary tiles (price band, confidence, trend).
+
+**Model Insights tab**
+- Narrative (`ModelOverview.tsx`): static explanation of inputs/approach; edit copy here.
+- `Historical Input Trends`: slider (3–12) chooses how many months of API history to plot per category (Labor/Capital/Materials/Energy) via Recharts line charts.
+- `Model Coefficients`: grid of 20 fields for current and lagged coefficients; `Reset to Defaults` restores the hardcoded `DEFAULT_COEFFICIENTS` in `App.tsx`.
+
+**Lag Controls tab**
+- Four inputs (t, t-1, t-2, t-3) must total 100%; these percentages scale the corresponding lag coefficient groups before calling the API. If invalid, predictions pause until corrected.
+
+**General behavior**
+- Predictions only run when allocations sum to 100% *and* lag allocations sum to 100%.
+- When the API responds, the UI also compares to the previous run to set the “Trend Insight” tile.
+- Errors from the API are caught and surfaced as alerts; the app keeps running with prior values.
+
+## Changing API / Backend Behavior
+- **Switch API URL**: set `VITE_API_URL` (env var or `.env`) before `npm run dev`/`npm run build`. Without it, the UI uses `http://localhost:5001` on localhost or `https://your-site/api` in production.
+- **Modify prediction math**: edit `az_model/api.py` (Flask). Key helpers are `calculate_prediction` and `DEFAULT_COEFFICIENTS`. Restart the server after changes.
+- **Adjust inputs or new series**: extend `compute_percentages.py` and downloader scripts (`download_*`) to generate new columns; expose them via `/api/data/latest`; mirror new fields in `az_ui_demo_MHEdit/src/types.ts` and the UI components.
+- **Distribution logic**: `NormalDistributionChart.tsx` builds the curve client-side from API-returned `mean`, `stdDev`, `min`, `max`. Negative values are floored at 0. To change the shape (e.g., log-normal or different clipping), update the data generation block in that component and keep axes/summary cards in sync.
+- **Lag weighting**: `LagAllocationControls.tsx` sets percentages; `applyLagAllocation` in `App.tsx` scales each lag’s coefficients before posting to `/api/predict`. Tweak the `baseShare` or mapping there to change influence rules.
 
 ## Vercel Deployment (UI + API)
 
