@@ -8,7 +8,7 @@ Full-stack toolkit for ingesting macro & supplier data, running the AZ bioresins
 
 ---
 
-## Handoff Cheatsheet
+## Handoff 
 - **Run it locally**: `python az_model/api.py` (backend) + `npm run dev` in `az_ui_demo_MHEdit` (frontend). Default API is `http://localhost:5001`.
 - **Change API URL**: Set `VITE_API_URL=<api-base>` before `npm run dev/build`. The UI falls back to `/api` on the same origin when unset.
 - **Buttons at a glance**:
